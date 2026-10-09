@@ -51,6 +51,11 @@
     margin-right: 6px;
   }
   .size-picker button { padding: 6px 10px; min-width: 52px; }
+  :root {
+    --sq-light: #f0d9b5;
+    --sq-dark: #b58863;
+    --black-piece-filter: none;
+  }
   .board-wrap {
     --board: min(440px, calc(100vw - 64px));
     display: grid;
@@ -89,8 +94,8 @@
     min-width: 0;
     min-height: 0;
   }
-  .square.light { background: #e8d5b0; }
-  .square.dark  { background: #3d1f0a; }
+  .square.light { background: var(--sq-light); }
+  .square.dark  { background: var(--sq-dark); }
   .square.selected { outline: 3px solid #d4a843; outline-offset: -3px; }
   .square.possible::after {
     content: '';
@@ -114,7 +119,14 @@
     pointer-events: none;
     display: block;
   }
+  .piece.black { filter: var(--black-piece-filter); }
   .piece.hidden { visibility: hidden; }
+  .size-picker button.theme { display: flex; align-items: center; gap: 6px; }
+  .swatch {
+    width: 14px; height: 14px;
+    border: 1px solid rgba(0,0,0,0.4);
+    flex-shrink: 0;
+  }
   .controls {
     display: flex;
     gap: 12px;
@@ -161,6 +173,10 @@
   <span class="label">Board size</span>
 </div>
 
+<div class="size-picker" id="theme-picker">
+  <span class="label">Theme</span>
+</div>
+
 <div class="board-wrap">
   <div class="coords-col" id="rank-coords"></div>
   <div class="board" id="board"></div>
@@ -198,6 +214,60 @@ let board = {};
 let selected = null;
 let showMoves = false;
 let blindFoldOn = false;
+
+// Board color themes. On very dark squares black pieces get a light halo so they stay visible.
+const THEMES = {
+  wood:   { name: 'Wood',   light: '#f0d9b5', dark: '#b58863', blackFilter: 'none' },
+  green:  { name: 'Green',  light: '#eeeed2', dark: '#769656', blackFilter: 'none' },
+  blue:   { name: 'Blue',   light: '#dee3e6', dark: '#8ca2ad', blackFilter: 'none' },
+  marble: { name: 'Marble', light: '#e6e6e6', dark: '#a7a7a7', blackFilter: 'none' },
+  walnut: { name: 'Walnut', light: '#e8d5b0', dark: '#3d1f0a',
+            blackFilter: 'drop-shadow(0 0 1px #f0e6d3) drop-shadow(0 0 2px rgba(240,230,211,0.8))' },
+};
+const DEFAULT_THEME = 'wood';
+let theme = loadTheme();
+
+function loadTheme() {
+  try {
+    const t = localStorage.getItem('blindfold-theme');
+    if (THEMES[t]) return t;
+  } catch (e) {}
+  return DEFAULT_THEME;
+}
+
+function initThemePicker() {
+  const el = document.getElementById('theme-picker');
+  Object.keys(THEMES).forEach(function(id) {
+    const t = THEMES[id];
+    const b = document.createElement('button');
+    b.className = 'theme';
+    b.dataset.theme = id;
+    const sw = document.createElement('span');
+    sw.className = 'swatch';
+    sw.style.background = 'linear-gradient(135deg, ' + t.light + ' 50%, ' + t.dark + ' 50%)';
+    b.appendChild(sw);
+    b.appendChild(document.createTextNode(t.name));
+    b.addEventListener('click', function() { setTheme(id); });
+    el.appendChild(b);
+  });
+}
+
+function setTheme(id) {
+  theme = id;
+  try { localStorage.setItem('blindfold-theme', id); } catch (e) {}
+  applyTheme();
+}
+
+function applyTheme() {
+  const t = THEMES[theme];
+  const root = document.documentElement.style;
+  root.setProperty('--sq-light', t.light);
+  root.setProperty('--sq-dark', t.dark);
+  root.setProperty('--black-piece-filter', t.blackFilter);
+  document.querySelectorAll('#theme-picker button').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.theme === theme);
+  });
+}
 
 function loadSize() {
   try {
@@ -323,7 +393,7 @@ function renderBoard() {
       if (board[key]) {
         const p = board[key];
         const img = document.createElement('img');
-        img.className = 'piece' + (blindFoldOn ? ' hidden' : '');
+        img.className = 'piece' + (p.color==='b' ? ' black' : '') + (blindFoldOn ? ' hidden' : '');
         img.src = PIECE_URLS[p.color + p.type];
         img.alt = (p.color==='w' ? 'White ' : 'Black ') + PIECE_NAMES[p.type];
         sq.appendChild(img);
@@ -432,6 +502,8 @@ function toggleBlindFold() {
   renderBoard();
 }
 
+initThemePicker();
+applyTheme();
 initSizePicker();
 applySize();
 newPosition();
