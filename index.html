@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Blindfold Chess 5×5</title>
+<title>Blindfold Chess Trainer</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inconsolata:wght@400;600&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -17,7 +17,7 @@
     align-items: center;
     justify-content: center;
     gap: 24px;
-    padding: 24px;
+    padding: 24px 16px;
     background-image: radial-gradient(ellipse at 20% 20%, #2d1a0e 0%, transparent 60%),
                       radial-gradient(ellipse at 80% 80%, #1a2d0e 0%, transparent 60%);
   }
@@ -27,6 +27,7 @@
     color: #d4a843;
     letter-spacing: 0.05em;
     text-shadow: 0 2px 12px rgba(212,168,67,0.3);
+    text-align: center;
   }
   .subtitle {
     font-size: 0.85rem;
@@ -35,38 +36,58 @@
     letter-spacing: 0.15em;
     text-transform: uppercase;
   }
-  .board-wrap { display: flex; }
-  .coords-col {
+  .size-picker {
     display: flex;
-    flex-direction: column;
-    justify-content: space-around;
-    padding: 4px 8px 4px 0;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .size-picker .label {
+    font-size: 0.8rem;
+    color: #a08060;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-right: 6px;
+  }
+  .size-picker button { padding: 6px 10px; min-width: 52px; }
+  .board-wrap {
+    --board: min(440px, calc(100vw - 64px));
+    display: grid;
+    grid-template-columns: auto var(--board);
+    grid-template-rows: var(--board) auto;
+  }
+  .coords-col {
+    display: grid;
+    padding-right: 8px;
     font-size: 0.75rem;
     color: #a08060;
+    align-items: center;
   }
   .coords-row {
-    display: flex;
-    justify-content: space-around;
-    padding: 8px 0 0 0;
+    grid-column: 2;
+    display: grid;
+    padding-top: 8px;
     font-size: 0.75rem;
     color: #a08060;
+    text-align: center;
   }
   .board {
     display: grid;
-    grid-template-columns: repeat(5, 80px);
-    grid-template-rows: repeat(5, 80px);
+    width: var(--board);
+    height: var(--board);
     border: 2px solid #1a0a00;
     box-shadow: 0 0 40px rgba(0,0,0,0.8);
   }
   .square {
-    width: 80px;
-    height: 80px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     position: relative;
     user-select: none;
+    min-width: 0;
+    min-height: 0;
   }
   .square.light { background: #e8d5b0; }
   .square.dark  { background: #3d1f0a; }
@@ -74,21 +95,22 @@
   .square.possible::after {
     content: '';
     position: absolute;
-    width: 24px; height: 24px;
+    width: 30%; height: 30%;
     border-radius: 50%;
     background: rgba(50,200,100,0.55);
     pointer-events: none;
     z-index: 1;
   }
   .square.possible.has-piece::after {
-    width: 72px; height: 72px;
+    width: auto; height: auto;
+    inset: 4px;
     background: transparent;
     border-radius: 0;
     border: 4px solid rgba(220,60,60,0.7);
   }
   .piece {
-    width: 68px;
-    height: 68px;
+    width: 85%;
+    height: 85%;
     pointer-events: none;
     display: block;
   }
@@ -123,7 +145,7 @@
   .notation {
     font-size: 0.8rem;
     color: #705040;
-    max-width: 420px;
+    max-width: 440px;
     text-align: center;
     line-height: 1.6;
   }
@@ -133,91 +155,147 @@
 <body>
 
 <h1>Blindfold Trainer</h1>
-<p class="subtitle">5 × 5 — Szachownica ćwiczebna</p>
+<p class="subtitle" id="subtitle"></p>
+
+<div class="size-picker" id="size-picker">
+  <span class="label">Board size</span>
+</div>
 
 <div class="board-wrap">
   <div class="coords-col" id="rank-coords"></div>
-  <div>
-    <div class="board" id="board"></div>
-    <div class="coords-row" id="file-coords"></div>
-  </div>
+  <div class="board" id="board"></div>
+  <div class="coords-row" id="file-coords"></div>
 </div>
 
 <div class="controls">
-  <button onclick="newPosition()">Nowa pozycja</button>
+  <button onclick="newPosition()">New position</button>
   <button id="btn-blindfold" onclick="toggleBlindFold()">Blindfold ▶</button>
-  <button id="btn-moves" onclick="toggleMoves()">Pokaż ruchy</button>
+  <button id="btn-moves" onclick="toggleMoves()">Show moves</button>
 </div>
 
-<div class="status" id="status">Kliknij figurę, by zobaczyć jej ruchy.</div>
+<div class="status" id="status"></div>
 <div class="notation" id="notation-display"></div>
 
 <script>
-const FILES = ['a','b','c','d','e'];
-const RANKS = ['5','4','3','2','1'];
+const MIN_SIZE = 2, MAX_SIZE = 8, DEFAULT_SIZE = 5;
+const ALL_FILES = ['a','b','c','d','e','f','g','h'];
+const HINT = 'Click a piece to see its moves.';
 
-// Wikimedia SVG chess pieces
-const BASE = 'https://upload.wikimedia.org/wikipedia/commons/';
-const PIECE_URLS = {
-  wK: BASE + '4/42/Chess_klt45.svg',
-  wQ: BASE + '1/15/Chess_qlt45.svg',
-  wR: BASE + 'b/b1/Chess_rlt45.svg',
-  wB: BASE + 'b/b1/Chess_blt45.svg',
-  wN: BASE + '7/70/Chess_nlt45.svg',
-  wP: BASE + '4/45/Chess_plt45.svg',
-  bK: BASE + 'f/f0/Chess_kdt45.svg',
-  bQ: BASE + '4/47/Chess_qdt45.svg',
-  bR: BASE + 'f/ff/Chess_rdt45.svg',
-  bB: BASE + '9/98/Chess_bdt45.svg',
-  bN: BASE + 'e/ef/Chess_ndt45.svg',
-  bP: BASE + 'c/c7/Chess_pdt45.svg',
-};
+// Piece images by Cburnett (Wikimedia Commons, CC BY-SA 3.0), served from this repo
+const PIECE_URLS = {};
+['K','Q','R','B','N','P'].forEach(function(t) {
+  PIECE_URLS['w'+t] = 'pieces/Chess_' + t.toLowerCase() + 'lt45.svg';
+  PIECE_URLS['b'+t] = 'pieces/Chess_' + t.toLowerCase() + 'dt45.svg';
+});
+// Preload so pieces appear instantly on every render
+Object.values(PIECE_URLS).forEach(function(u) { new Image().src = u; });
 
-// Notation symbols
-const SYM = { K:'K', Q:'H', R:'W', B:'G', N:'S', P:'' };
+const PIECE_NAMES = { K:'King', Q:'Queen', R:'Rook', B:'Bishop', N:'Knight', P:'Pawn' };
 
+let N = loadSize();
+let FILES, RANKS;
 let board = {};
 let selected = null;
 let showMoves = false;
 let blindFoldOn = false;
 
-function pieceKey(type, color) {
-  return color + type.toUpperCase();
+function loadSize() {
+  try {
+    const s = parseInt(localStorage.getItem('blindfold-size'), 10);
+    if (s >= MIN_SIZE && s <= MAX_SIZE) return s;
+  } catch (e) {}
+  return DEFAULT_SIZE;
 }
 
+function saveSize() {
+  try { localStorage.setItem('blindfold-size', String(N)); } catch (e) {}
+}
+
+function rand(n) { return Math.floor(Math.random()*n); }
+
 function generatePosition() {
-  const pool = [
-    {type:'Q',color:'w'},{type:'R',color:'w'},{type:'B',color:'w'},{type:'N',color:'w'},
-    {type:'q',color:'b'},{type:'r',color:'b'},{type:'b',color:'b'},{type:'n',color:'b'},
-    {type:'P',color:'w'},{type:'P',color:'w'},{type:'p',color:'b'},{type:'p',color:'b'},
-  ];
   function adj(c1,r1,c2,r2) { return Math.abs(c1-c2)<=1 && Math.abs(r1-r2)<=1; }
-  let wKc,wKr,bKc,bKr;
-  do {
-    wKc=Math.floor(Math.random()*5); wKr=Math.floor(Math.random()*5);
-    bKc=Math.floor(Math.random()*5); bKr=Math.floor(Math.random()*5);
-  } while (adj(wKc,wKr,bKc,bKr));
-  const used = new Set([wKc+','+wKr, bKc+','+bKr]);
-  const extra = [...pool].sort(()=>Math.random()-0.5).slice(0, 2+Math.floor(Math.random()*4));
-  const result = [[wKc,wKr,'K','w'],[bKc,bKr,'k','b']];
+  const used = new Set();
+  const result = [];
+
+  const wKc = rand(N), wKr = rand(N);
+  used.add(wKc+','+wKr);
+  result.push([wKc,wKr,'K','w']);
+
+  // Black king must not touch the white one; impossible on 2×2, so it's skipped there
+  const bKingSquares = [];
+  for (let c=0; c<N; c++) for (let r=0; r<N; r++)
+    if (!adj(c,r,wKc,wKr)) bKingSquares.push([c,r]);
+  if (bKingSquares.length) {
+    const sq = bKingSquares[rand(bKingSquares.length)];
+    used.add(sq[0]+','+sq[1]);
+    result.push([sq[0],sq[1],'K','b']);
+  }
+
+  const pool = [];
+  ['w','b'].forEach(function(color) {
+    ['Q','R','B','N'].forEach(function(t) { pool.push({type:t, color:color}); });
+    for (let i=0; i<Math.max(2, N-3); i++) pool.push({type:'P', color:color});
+  });
+  const free = N*N - used.size;
+  const maxExtra = Math.max(1, Math.min(pool.length, free - 1, Math.floor(N*N/4)));
+  const minExtra = Math.max(1, Math.floor(maxExtra/2));
+  const count = minExtra + rand(maxExtra - minExtra + 1);
+  const extra = pool.sort(function(){ return Math.random()-0.5; }).slice(0, count);
+
   for (const p of extra) {
-    let c,r,key,tries=0;
-    do { c=Math.floor(Math.random()*5); r=Math.floor(Math.random()*5); key=c+','+r; tries++; }
-    while (used.has(key) && tries<50);
-    if (!used.has(key)) {
-      const isPawn = p.type==='P'||p.type==='p';
-      const badRank = isPawn && ((p.color==='w'&&r===0)||(p.color==='b'&&r===4));
-      if (!badRank) { used.add(key); result.push([c,r,p.type,p.color]); }
+    // Pawns never stand on the first or last rank
+    const options = [];
+    for (let c=0; c<N; c++) for (let r=0; r<N; r++) {
+      if (used.has(c+','+r)) continue;
+      if (p.type==='P' && (r===0 || r===N-1)) continue;
+      options.push([c,r]);
     }
+    if (!options.length) continue;
+    const sq = options[rand(options.length)];
+    used.add(sq[0]+','+sq[1]);
+    result.push([sq[0],sq[1],p.type,p.color]);
   }
   return result;
 }
 
-function initCoords() {
-  document.getElementById('rank-coords').innerHTML =
-    RANKS.map(r=>'<div style="height:80px;display:flex;align-items:center">'+r+'</div>').join('');
-  document.getElementById('file-coords').innerHTML =
-    FILES.map(f=>'<div style="width:80px;text-align:center">'+f+'</div>').join('');
+function initSizePicker() {
+  const el = document.getElementById('size-picker');
+  for (let s=MIN_SIZE; s<=MAX_SIZE; s++) {
+    const b = document.createElement('button');
+    b.textContent = s+'×'+s;
+    b.dataset.size = s;
+    b.addEventListener('click', function() { setSize(s); });
+    el.appendChild(b);
+  }
+}
+
+function setSize(s) {
+  N = s;
+  saveSize();
+  applySize();
+  newPosition();
+}
+
+function applySize() {
+  FILES = ALL_FILES.slice(0, N);
+  RANKS = [];
+  for (let r=N; r>=1; r--) RANKS.push(String(r));
+  document.title = 'Blindfold Chess ' + N + '×' + N;
+  document.getElementById('subtitle').textContent = N + ' × ' + N + ' — practice board';
+  document.querySelectorAll('#size-picker button').forEach(function(b) {
+    b.classList.toggle('active', +b.dataset.size === N);
+  });
+  const tpl = 'repeat(' + N + ', 1fr)';
+  const boardEl = document.getElementById('board');
+  boardEl.style.gridTemplateColumns = tpl;
+  boardEl.style.gridTemplateRows = tpl;
+  const ranksEl = document.getElementById('rank-coords');
+  ranksEl.style.gridTemplateRows = tpl;
+  ranksEl.innerHTML = RANKS.map(function(r){ return '<div>'+r+'</div>'; }).join('');
+  const filesEl = document.getElementById('file-coords');
+  filesEl.style.gridTemplateColumns = tpl;
+  filesEl.innerHTML = FILES.map(function(f){ return '<div>'+f+'</div>'; }).join('');
 }
 
 function newPosition() {
@@ -228,25 +306,26 @@ function newPosition() {
   document.getElementById('btn-blindfold').classList.remove('active');
   document.getElementById('btn-blindfold').textContent = 'Blindfold ▶';
   document.getElementById('notation-display').innerHTML = '';
-  document.getElementById('status').textContent = 'Kliknij figurę, by zobaczyć jej ruchy.';
+  document.getElementById('status').textContent = HINT;
   renderBoard();
 }
 
 function renderBoard() {
   const el = document.getElementById('board');
   el.innerHTML = '';
-  for (let r=0; r<5; r++) {
-    for (let c=0; c<5; c++) {
+  for (let r=0; r<N; r++) {
+    for (let c=0; c<N; c++) {
       const sq = document.createElement('div');
-      sq.className = 'square ' + ((r+c)%2===0 ? 'light' : 'dark');
+      // a1 is always a dark square
+      sq.className = 'square ' + ((c + (N-1-r)) % 2 === 1 ? 'light' : 'dark');
       sq.dataset.c = c; sq.dataset.r = r;
       const key = c+','+r;
       if (board[key]) {
         const p = board[key];
         const img = document.createElement('img');
         img.className = 'piece' + (blindFoldOn ? ' hidden' : '');
-        img.src = PIECE_URLS[pieceKey(p.type, p.color)];
-        img.alt = p.color + p.type;
+        img.src = PIECE_URLS[p.color + p.type];
+        img.alt = (p.color==='w' ? 'White ' : 'Black ') + PIECE_NAMES[p.type];
         sq.appendChild(img);
         sq.classList.add('has-piece');
       }
@@ -274,9 +353,10 @@ function getMoves(c, r) {
   const p = board[c+','+r];
   if (!p) return [];
   const moves = [];
-  const t = p.type.toUpperCase();
+  const t = p.type;
+  function inside(nc, nr) { return nc>=0 && nc<N && nr>=0 && nr<N; }
   function add(nc, nr) {
-    if (nc<0||nc>4||nr<0||nr>4) return false;
+    if (!inside(nc, nr)) return false;
     const k = nc+','+nr;
     if (board[k] && board[k].color===p.color) return false;
     moves.push({c:nc, r:nr, capture:!!board[k]});
@@ -285,18 +365,18 @@ function getMoves(c, r) {
   if (t==='N') {
     [[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]].forEach(function(d){ add(c+d[0],r+d[1]); });
   } else if (t==='K') {
-    for (var dc=-1;dc<=1;dc++) for (var dr=-1;dr<=1;dr++) if (dc||dr) add(c+dc,r+dr);
+    for (let dc=-1;dc<=1;dc++) for (let dr=-1;dr<=1;dr++) if (dc||dr) add(c+dc,r+dr);
   } else if (t==='P') {
     const dir = p.color==='w' ? -1 : 1;
-    if (r+dir>=0&&r+dir<=4&&!board[c+','+(r+dir)]) moves.push({c:c,r:r+dir,capture:false});
+    if (inside(c, r+dir) && !board[c+','+(r+dir)]) moves.push({c:c,r:r+dir,capture:false});
     [-1,1].forEach(function(dc){
       const k=(c+dc)+','+(r+dir);
       if (board[k]&&board[k].color!==p.color) moves.push({c:c+dc,r:r+dir,capture:true});
     });
   } else {
     const dirs=[];
-    if(['R','Q'].includes(t)) dirs.push([1,0],[-1,0],[0,1],[0,-1]);
-    if(['B','Q'].includes(t)) dirs.push([1,1],[1,-1],[-1,1],[-1,-1]);
+    if (t==='R'||t==='Q') dirs.push([1,0],[-1,0],[0,1],[0,-1]);
+    if (t==='B'||t==='Q') dirs.push([1,1],[1,-1],[-1,1],[-1,-1]);
     dirs.forEach(function(d){
       let nc=c+d[0],nr=r+d[1];
       while(add(nc,nr)){nc+=d[0];nr+=d[1];}
@@ -314,15 +394,23 @@ function highlightMoves() {
   });
 }
 
+// Algebraic notation, e.g. Nf3, Bxe5, exd5
+function moveText(p, from, m) {
+  const to = FILES[m.c]+RANKS[m.r];
+  if (p.type==='P') return m.capture ? FILES[from.c]+'x'+to : to;
+  return p.type + (m.capture ? 'x' : '') + to;
+}
+
 function updateNotation() {
   const el = document.getElementById('notation-display');
-  if (!selected) { el.innerHTML=''; return; }
+  if (!selected) { el.innerHTML=''; document.getElementById('status').textContent = HINT; return; }
   const p = board[selected.c+','+selected.r];
   if (!p) return;
   const sq = FILES[selected.c]+RANKS[selected.r];
   const moves = getMoves(selected.c, selected.r);
-  const notations = moves.map(function(m){ return FILES[m.c]+RANKS[m.r]+(m.capture?'×':''); }).join(', ');
-  el.innerHTML = 'Figura: <span>'+p.color.toUpperCase()+p.type.toUpperCase()+' '+sq+'</span> &nbsp;|&nbsp; Ruchy: <span>'+(notations||'—')+'</span>';
+  const notations = moves.map(function(m){ return moveText(p, selected, m); }).join(', ');
+  const name = (p.color==='w' ? 'White ' : 'Black ') + PIECE_NAMES[p.type].toLowerCase();
+  el.innerHTML = 'Piece: <span>'+name+' on '+sq+'</span> &nbsp;|&nbsp; Moves: <span>'+(notations||'—')+'</span>';
   document.getElementById('status').textContent = '';
 }
 
@@ -337,13 +425,15 @@ function toggleBlindFold() {
   selected = null;
   document.getElementById('btn-blindfold').classList.toggle('active', blindFoldOn);
   document.getElementById('btn-blindfold').textContent = blindFoldOn ? 'Blindfold ■' : 'Blindfold ▶';
+  document.getElementById('notation-display').innerHTML = '';
   document.getElementById('status').textContent = blindFoldOn
-    ? 'Wizualizuj pozycję z pamięci. Kliknij ponownie aby sprawdzić.'
-    : 'Kliknij figurę, by zobaczyć jej ruchy.';
+    ? 'Visualize the position from memory. Click again to check.'
+    : HINT;
   renderBoard();
 }
 
-initCoords();
+initSizePicker();
+applySize();
 newPosition();
 </script>
 </body>
